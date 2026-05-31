@@ -72,14 +72,27 @@
       <div id="contentWrapper" class="d-none">
         
         <div class="row mb-4">
-          <div class="col-12">
-            <div class="card border-0 shadow-sm" style="border-radius: 15px; background: #fafafa;">
+          <div class="col-lg-7 mb-3">
+            <div class="card border-0 shadow-sm h-100" style="border-radius: 15px; background: #fafafa;">
               <div class="card-body">
                 <h5 class="text-center mb-3 text-secondary">
-                  <i class="bi bi-pie-chart-fill text-primary"></i> เปรียบเทียบจำนวนโรงเรียนแยกตามสังกัด
+                  <i class="bi bi-bar-chart-fill text-primary"></i> จำนวนโรงเรียนแยกตามสังกัด
                 </h5>
                 <div class="chart-container">
-                  <canvas id="compareChart"></canvas>
+                  <canvas id="agencyChart"></canvas>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="col-lg-5 mb-3">
+            <div class="card border-0 shadow-sm h-100" style="border-radius: 15px; background: #fafafa;">
+              <div class="card-body">
+                <h5 class="text-center mb-3 text-secondary">
+                  <i class="bi bi-pie-chart-fill text-info"></i> สัดส่วนจำนวนโรงเรียนตามรุ่น
+                </h5>
+                <div class="chart-container">
+                  <canvas id="batchChart"></canvas>
                 </div>
               </div>
             </div>
@@ -117,7 +130,8 @@
     <script>
       $(document).ready(function() {
         let table;
-        let chartInstance = null;
+        let agencyChartInstance = null;
+        let batchChartInstance = null;
 
         $('#csvFileInput').on('change', function(e) {
           const file = e.target.files[0];
@@ -125,8 +139,8 @@
 
           Papa.parse(file, {
             header: false,
-            skipEmptyLines: 'greedy', // ตัดบรรทัดว่างทิ้งทั้งหมด
-            encoding: "UTF-8", // รองรับภาษาไทย
+            skipEmptyLines: 'greedy',
+            encoding: "UTF-8",
             complete: function(results) {
               const data = results.data;
               if(data.length < 2) {
@@ -137,12 +151,8 @@
               const headers = data[0];
               const rawRows = data.slice(1);
               
-              // ป้องกัน Error: คัดกรองเฉพาะบรรทัดที่มีจำนวนคอลัมน์เท่ากับหัวตารางเท่านั้น
+              // คัดเฉพาะบรรทัดที่สมบูรณ์ป้องกัน Error
               const validRows = rawRows.filter(row => row.length === headers.length);
-
-              if (validRows.length !== rawRows.length) {
-                console.warn(`ข้ามข้อมูลที่ผิดปกติจำนวน ${rawRows.length - validRows.length} แถว`);
-              }
 
               $('#uploadWrapper').slideUp();
               $('#contentWrapper').removeClass('d-none');
@@ -155,7 +165,7 @@
               }
 
               table = $('#schoolTable').DataTable({
-                data: validRows, // ใช้เฉพาะข้อมูลที่สมบูรณ์
+                data: validRows,
                 columns: headers.map(function(header) {
                   return { title: header };
                 }),
@@ -173,31 +183,36 @@
               agencies.forEach(a => $('#agencyFilter').append(`<option value="${a}">${a}</option>`));
               batches.forEach(b => $('#batchFilter').append(`<option value="${b}">รุ่นที่ ${b}</option>`));
 
-              function renderChart() {
+              // ฟังก์ชันวาดกราฟทั้ง 2 รูปแบบ
+              function renderCharts() {
                 let filteredData = table.rows({search: 'applied'}).data().toArray();
-                let counts = {};
+                let agencyCounts = {};
+                let batchCounts = {};
                 
                 filteredData.forEach(row => {
                   let agency = row[2];
-                  counts[agency] = (counts[agency] || 0) + 1;
+                  let batch = row[4];
+                  if(agency) agencyCounts[agency] = (agencyCounts[agency] || 0) + 1;
+                  if(batch) batchCounts[batch] = (batchCounts[batch] || 0) + 1;
                 });
 
-                let labels = Object.keys(counts);
-                let chartData = Object.values(counts);
+                // 1. วาดกราฟแท่ง (สังกัด)
+                let agencyLabels = Object.keys(agencyCounts);
+                let agencyData = Object.values(agencyCounts);
 
-                if (chartInstance) chartInstance.destroy();
-
-                let ctx = document.getElementById('compareChart').getContext('2d');
-                chartInstance = new Chart(ctx, {
+                if (agencyChartInstance) agencyChartInstance.destroy();
+                let ctxAgency = document.getElementById('agencyChart').getContext('2d');
+                agencyChartInstance = new Chart(ctxAgency, {
                   type: 'bar',
                   data: {
-                    labels: labels,
+                    labels: agencyLabels,
                     datasets: [{
                       label: 'จำนวนโรงเรียน',
-                      data: chartData,
+                      data: agencyData,
                       backgroundColor: ['#a8dadc', '#457b9d', '#1d3557', '#90e0ef', '#00b4d8', '#0077b6', '#03045e'],
-                      borderRadius: 8,
-                      barThickness: 40
+                      borderRadius: 6,
+                      barThickness: 'flex',
+                      maxBarThickness: 45
                     }]
                   },
                   options: {
@@ -206,14 +221,49 @@
                     plugins: { legend: { display: false } },
                     scales: {
                       y: { beginAtZero: true, ticks: { stepSize: 1, font: {family: 'Kanit'} } },
-                      x: { ticks: { font: {family: 'Kanit'} } }
+                      x: { ticks: { font: {family: 'Kanit', size: 11} } }
+                    }
+                  }
+                });
+
+                // 2. วาดกราฟวงกลม (รุ่น)
+                let batchLabels = Object.keys(batchCounts).map(b => 'รุ่นที่ ' + b);
+                let batchData = Object.values(batchCounts);
+
+                if (batchChartInstance) batchChartInstance.destroy();
+                let ctxBatch = document.getElementById('batchChart').getContext('2d');
+                batchChartInstance = new Chart(ctxBatch, {
+                  type: 'pie',
+                  data: {
+                    labels: batchLabels,
+                    datasets: [{
+                      data: batchData,
+                      backgroundColor: ['#1d3557', '#457b9d', '#a8dadc', '#00b4d8', '#90e0ef', '#48cae4', '#023e8a'],
+                      borderWidth: 2,
+                      borderColor: '#ffffff'
+                    }]
+                  },
+                  options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                      legend: { 
+                        position: 'right', 
+                        labels: { font: {family: 'Kanit'}, boxWidth: 15 } 
+                      },
+                      tooltip: {
+                        titleFont: {family: 'Kanit'},
+                        bodyFont: {family: 'Kanit', size: 14}
+                      }
                     }
                   }
                 });
               }
 
-              renderChart();
+              // เรียกฟังก์ชันวาดกราฟครั้งแรก
+              renderCharts();
 
+              // ตรวจจับการเปลี่ยนค่า Dropdown
               $('#agencyFilter').off('change').on('change', function() {
                 let val = $.fn.dataTable.util.escapeRegex($(this).val());
                 table.column(2).search(val ? '^' + val + '$' : '', true, false).draw();
@@ -224,7 +274,8 @@
                 table.column(4).search(val ? '^' + val + '$' : '', true, false).draw();
               });
 
-              table.on('search.dt', function() { renderChart(); });
+              // อัปเดตกราฟอัตโนมัติ ทุกครั้งที่ตารางถูกค้นหาหรือกรอง
+              table.on('search.dt', function() { renderCharts(); });
             },
             error: function(err) {
               alert("เกิดข้อผิดพลาดในการอ่านไฟล์: " + err.message);
