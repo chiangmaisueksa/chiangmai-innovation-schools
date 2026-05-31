@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ข้อมูลโรงเรียนพื้นที่นวัตกรรมเชียงใหม่</title>
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    
+    <style>
+      body {
+        font-family: 'Kanit', sans-serif;
+        background-color: #f4f8fa;
+        color: #333333;
+      }
+      .main-card {
+        background-color: #ffffff;
+        border-radius: 20px;
+        box-shadow: 0 8px 25px rgba(0,0,0,0.05);
+        padding: 30px;
+      }
+      h2.title-header {
+        font-weight: 600;
+        color: #1e3a8a;
+      }
+      .upload-section {
+        background-color: #e6f0fa;
+        border-radius: 15px;
+        padding: 30px;
+        border: 2px dashed #4a90e2;
+        text-align: center;
+      }
+      .filter-section {
+        background-color: #eef5fc;
+        border-radius: 15px;
+        padding: 20px;
+        border: 1px solid #b3d1ff;
+      }
+      .chart-container {
+        position: relative;
+        height: 250px;
+        width: 100%;
+      }
+      .table-cute thead th {
+        background-color: #4a90e2 !important;
+        color: white !important;
+        font-weight: 500;
+        border-bottom: 2px solid #1e3a8a !important;
+      }
+      .table-hover tbody tr:hover {
+        background-color: #eef5fc !important;
+      }
+      .form-select, .form-control {
+        border-radius: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container mt-4 mb-5 main-card">
+      <h2 class="mb-4 text-center title-header">
+        <i class="bi bi-backpack2-fill text-info"></i> ข้อมูลโรงเรียนพื้นที่นวัตกรรมเชียงใหม่ 🏫
+      </h2>
+
+      <div id="uploadWrapper" class="upload-section mb-4">
+        <h5 class="text-primary mb-3"><i class="bi bi-filetype-csv"></i> กรุณาเลือกไฟล์ CSV ของท่านเพื่อแสดงข้อมูล</h5>
+        <input type="file" id="csvFileInput" class="form-control w-50 mx-auto" accept=".csv">
+        <p class="text-muted mt-2 small">* ข้อมูลจะประมวลผลบนเครื่องของคุณเท่านั้น ไม่มีการอัปโหลดขึ้นเซิร์ฟเวอร์</p>
+      </div>
+
+      <div id="contentWrapper" class="d-none">
+        
+        <div class="row mb-4">
+          <div class="col-12">
+            <div class="card border-0 shadow-sm" style="border-radius: 15px; background: #fafafa;">
+              <div class="card-body">
+                <h5 class="text-center mb-3 text-secondary">
+                  <i class="bi bi-pie-chart-fill text-primary"></i> เปรียบเทียบจำนวนโรงเรียนแยกตามสังกัด
+                </h5>
+                <div class="chart-container">
+                  <canvas id="compareChart"></canvas>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="row mb-4 filter-section shadow-sm mx-0">
+          <div class="col-md-6 mb-2">
+            <label class="form-label text-primary fw-bold"><i class="bi bi-building"></i> ค้นหาตามสังกัด</label>
+            <select id="agencyFilter" class="form-select border-primary">
+              <option value="">🔹 แสดงทุกสังกัด 🔹</option>
+            </select>
+          </div>
+          <div class="col-md-6 mb-2">
+            <label class="form-label text-info fw-bold"><i class="bi bi-stars"></i> ค้นหาตามรุ่น</label>
+            <select id="batchFilter" class="form-select border-info">
+              <option value="">💎 แสดงทุกรุ่น 💎</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table id="schoolTable" class="table table-hover table-bordered table-cute" style="width:100%">
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+    <script>
+      $(document).ready(function() {
+        let table;
+        let chartInstance = null;
+
+        $('#csvFileInput').on('change', function(e) {
+          const file = e.target.files[0];
+          if (!file) return;
+
+          Papa.parse(file, {
+            header: false,
+            skipEmptyLines: 'greedy', // ตัดบรรทัดว่างทิ้งทั้งหมด
+            encoding: "UTF-8", // รองรับภาษาไทย
+            complete: function(results) {
+              const data = results.data;
+              if(data.length < 2) {
+                alert("ไฟล์ CSV ไม่มีข้อมูล หรืออาจติดปัญหาเรื่องการเข้ารหัสไฟล์ (Encoding) ครับ");
+                return;
+              }
+
+              const headers = data[0];
+              const rawRows = data.slice(1);
+              
+              // ป้องกัน Error: คัดกรองเฉพาะบรรทัดที่มีจำนวนคอลัมน์เท่ากับหัวตารางเท่านั้น
+              const validRows = rawRows.filter(row => row.length === headers.length);
+
+              if (validRows.length !== rawRows.length) {
+                console.warn(`ข้ามข้อมูลที่ผิดปกติจำนวน ${rawRows.length - validRows.length} แถว`);
+              }
+
+              $('#uploadWrapper').slideUp();
+              $('#contentWrapper').removeClass('d-none');
+
+              if (table) {
+                table.destroy();
+                $('#schoolTable').empty();
+                $('#agencyFilter').html('<option value="">🔹 แสดงทุกสังกัด 🔹</option>');
+                $('#batchFilter').html('<option value="">💎 แสดงทุกรุ่น 💎</option>');
+              }
+
+              table = $('#schoolTable').DataTable({
+                data: validRows, // ใช้เฉพาะข้อมูลที่สมบูรณ์
+                columns: headers.map(function(header) {
+                  return { title: header };
+                }),
+                language: {
+                  url: '//cdn.datatables.net/plug-ins/1.13.6/i18n/th.json'
+                },
+                pageLength: 15,
+                responsive: true,
+                lengthMenu: [[10, 15, 25, 50, -1], [10, 15, 25, 50, "ทั้งหมด"]]
+              });
+
+              let agencies = [...new Set(validRows.map(item => item[2]))].filter(x => x).sort();
+              let batches = [...new Set(validRows.map(item => item[4]))].filter(x => x).sort();
+
+              agencies.forEach(a => $('#agencyFilter').append(`<option value="${a}">${a}</option>`));
+              batches.forEach(b => $('#batchFilter').append(`<option value="${b}">รุ่นที่ ${b}</option>`));
+
+              function renderChart() {
+                let filteredData = table.rows({search: 'applied'}).data().toArray();
+                let counts = {};
+                
+                filteredData.forEach(row => {
+                  let agency = row[2];
+                  counts[agency] = (counts[agency] || 0) + 1;
+                });
+
+                let labels = Object.keys(counts);
+                let chartData = Object.values(counts);
+
+                if (chartInstance) chartInstance.destroy();
+
+                let ctx = document.getElementById('compareChart').getContext('2d');
+                chartInstance = new Chart(ctx, {
+                  type: 'bar',
+                  data: {
+                    labels: labels,
+                    datasets: [{
+                      label: 'จำนวนโรงเรียน',
+                      data: chartData,
+                      backgroundColor: ['#a8dadc', '#457b9d', '#1d3557', '#90e0ef', '#00b4d8', '#0077b6', '#03045e'],
+                      borderRadius: 8,
+                      barThickness: 40
+                    }]
+                  },
+                  options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                      y: { beginAtZero: true, ticks: { stepSize: 1, font: {family: 'Kanit'} } },
+                      x: { ticks: { font: {family: 'Kanit'} } }
+                    }
+                  }
+                });
+              }
+
+              renderChart();
+
+              $('#agencyFilter').off('change').on('change', function() {
+                let val = $.fn.dataTable.util.escapeRegex($(this).val());
+                table.column(2).search(val ? '^' + val + '$' : '', true, false).draw();
+              });
+
+              $('#batchFilter').off('change').on('change', function() {
+                let val = $.fn.dataTable.util.escapeRegex($(this).val());
+                table.column(4).search(val ? '^' + val + '$' : '', true, false).draw();
+              });
+
+              table.on('search.dt', function() { renderChart(); });
+            },
+            error: function(err) {
+              alert("เกิดข้อผิดพลาดในการอ่านไฟล์: " + err.message);
+            }
+          });
+        });
+      });
+    </script>
+  </body>
+</html>
