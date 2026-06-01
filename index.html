@@ -25,13 +25,6 @@
         font-weight: 600;
         color: #1e3a8a;
       }
-      .upload-section {
-        background-color: #e6f0fa;
-        border-radius: 15px;
-        padding: 30px;
-        border: 2px dashed #4a90e2;
-        text-align: center;
-      }
       .filter-section {
         background-color: #eef5fc;
         border-radius: 15px;
@@ -63,10 +56,11 @@
         <i class="bi bi-backpack2-fill text-info"></i> ข้อมูลโรงเรียนพื้นที่นวัตกรรมเชียงใหม่ 🏫
       </h2>
 
-      <div id="uploadWrapper" class="upload-section mb-4">
-        <h5 class="text-primary mb-3"><i class="bi bi-filetype-csv"></i> กรุณาเลือกไฟล์ CSV ของท่านเพื่อแสดงข้อมูล</h5>
-        <input type="file" id="csvFileInput" class="form-control w-50 mx-auto" accept=".csv">
-        <p class="text-muted mt-2 small">* ข้อมูลจะประมวลผลบนเครื่องของคุณเท่านั้น ไม่มีการอัปโหลดขึ้นเซิร์ฟเวอร์</p>
+      <div id="loadingWrapper" class="text-center my-5">
+        <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+          <span class="visually-hidden">Loading...</span>
+        </div>
+        <h5 class="text-primary mt-3">กำลังโหลดข้อมูลโรงเรียน...</h5>
       </div>
 
       <div id="contentWrapper" class="d-none">
@@ -133,154 +127,147 @@
         let agencyChartInstance = null;
         let batchChartInstance = null;
 
-        $('#csvFileInput').on('change', function(e) {
-          const file = e.target.files[0];
-          if (!file) return;
+        // ดึงไฟล์ CSV อัตโนมัติ (ไฟล์ต้องอยู่ในโฟลเดอร์เดียวกับ HTML)
+        const csvFileName = "โรงเรียนพื้นที่นวัตกรรมเชียงใหม่.csv";
 
-          Papa.parse(file, {
-            header: false,
-            skipEmptyLines: 'greedy',
-            encoding: "UTF-8",
-            complete: function(results) {
-              const data = results.data;
-              if(data.length < 2) {
-                alert("ไฟล์ CSV ไม่มีข้อมูล หรืออาจติดปัญหาเรื่องการเข้ารหัสไฟล์ (Encoding) ครับ");
-                return;
-              }
-
-              const headers = data[0];
-              const rawRows = data.slice(1);
-              
-              // คัดเฉพาะบรรทัดที่สมบูรณ์ป้องกัน Error
-              const validRows = rawRows.filter(row => row.length === headers.length);
-
-              $('#uploadWrapper').slideUp();
-              $('#contentWrapper').removeClass('d-none');
-
-              if (table) {
-                table.destroy();
-                $('#schoolTable').empty();
-                $('#agencyFilter').html('<option value="">🔹 แสดงทุกสังกัด 🔹</option>');
-                $('#batchFilter').html('<option value="">💎 แสดงทุกรุ่น 💎</option>');
-              }
-
-              table = $('#schoolTable').DataTable({
-                data: validRows,
-                columns: headers.map(function(header) {
-                  return { title: header };
-                }),
-                language: {
-                  url: '//cdn.datatables.net/plug-ins/1.13.6/i18n/th.json'
-                },
-                pageLength: 15,
-                responsive: true,
-                lengthMenu: [[10, 15, 25, 50, -1], [10, 15, 25, 50, "ทั้งหมด"]]
-              });
-
-              let agencies = [...new Set(validRows.map(item => item[2]))].filter(x => x).sort();
-              let batches = [...new Set(validRows.map(item => item[4]))].filter(x => x).sort();
-
-              agencies.forEach(a => $('#agencyFilter').append(`<option value="${a}">${a}</option>`));
-              batches.forEach(b => $('#batchFilter').append(`<option value="${b}">รุ่นที่ ${b}</option>`));
-
-              // ฟังก์ชันวาดกราฟทั้ง 2 รูปแบบ
-              function renderCharts() {
-                let filteredData = table.rows({search: 'applied'}).data().toArray();
-                let agencyCounts = {};
-                let batchCounts = {};
-                
-                filteredData.forEach(row => {
-                  let agency = row[2];
-                  let batch = row[4];
-                  if(agency) agencyCounts[agency] = (agencyCounts[agency] || 0) + 1;
-                  if(batch) batchCounts[batch] = (batchCounts[batch] || 0) + 1;
-                });
-
-                // 1. วาดกราฟแท่ง (สังกัด)
-                let agencyLabels = Object.keys(agencyCounts);
-                let agencyData = Object.values(agencyCounts);
-
-                if (agencyChartInstance) agencyChartInstance.destroy();
-                let ctxAgency = document.getElementById('agencyChart').getContext('2d');
-                agencyChartInstance = new Chart(ctxAgency, {
-                  type: 'bar',
-                  data: {
-                    labels: agencyLabels,
-                    datasets: [{
-                      label: 'จำนวนโรงเรียน',
-                      data: agencyData,
-                      backgroundColor: ['#a8dadc', '#457b9d', '#1d3557', '#90e0ef', '#00b4d8', '#0077b6', '#03045e'],
-                      borderRadius: 6,
-                      barThickness: 'flex',
-                      maxBarThickness: 45
-                    }]
-                  },
-                  options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
-                    scales: {
-                      y: { beginAtZero: true, ticks: { stepSize: 1, font: {family: 'Kanit'} } },
-                      x: { ticks: { font: {family: 'Kanit', size: 11} } }
-                    }
-                  }
-                });
-
-                // 2. วาดกราฟวงกลม (รุ่น)
-                let batchLabels = Object.keys(batchCounts).map(b => 'รุ่นที่ ' + b);
-                let batchData = Object.values(batchCounts);
-
-                if (batchChartInstance) batchChartInstance.destroy();
-                let ctxBatch = document.getElementById('batchChart').getContext('2d');
-                batchChartInstance = new Chart(ctxBatch, {
-                  type: 'pie',
-                  data: {
-                    labels: batchLabels,
-                    datasets: [{
-                      data: batchData,
-                      backgroundColor: ['#1d3557', '#457b9d', '#a8dadc', '#00b4d8', '#90e0ef', '#48cae4', '#023e8a'],
-                      borderWidth: 2,
-                      borderColor: '#ffffff'
-                    }]
-                  },
-                  options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                      legend: { 
-                        position: 'right', 
-                        labels: { font: {family: 'Kanit'}, boxWidth: 15 } 
-                      },
-                      tooltip: {
-                        titleFont: {family: 'Kanit'},
-                        bodyFont: {family: 'Kanit', size: 14}
-                      }
-                    }
-                  }
-                });
-              }
-
-              // เรียกฟังก์ชันวาดกราฟครั้งแรก
-              renderCharts();
-
-              // ตรวจจับการเปลี่ยนค่า Dropdown
-              $('#agencyFilter').off('change').on('change', function() {
-                let val = $.fn.dataTable.util.escapeRegex($(this).val());
-                table.column(2).search(val ? '^' + val + '$' : '', true, false).draw();
-              });
-
-              $('#batchFilter').off('change').on('change', function() {
-                let val = $.fn.dataTable.util.escapeRegex($(this).val());
-                table.column(4).search(val ? '^' + val + '$' : '', true, false).draw();
-              });
-
-              // อัปเดตกราฟอัตโนมัติ ทุกครั้งที่ตารางถูกค้นหาหรือกรอง
-              table.on('search.dt', function() { renderCharts(); });
-            },
-            error: function(err) {
-              alert("เกิดข้อผิดพลาดในการอ่านไฟล์: " + err.message);
+        Papa.parse(csvFileName, {
+          download: true, // สั่งให้ดาวน์โหลดไฟล์จาก URL/โฟลเดอร์
+          header: false,
+          skipEmptyLines: 'greedy',
+          complete: function(results) {
+            const data = results.data;
+            if(data.length < 2) {
+              $('#loadingWrapper').html('<div class="alert alert-danger">ไม่พบข้อมูล หรือชื่อไฟล์ CSV ไม่ตรงกันครับ</div>');
+              return;
             }
-          });
+
+            const headers = data[0];
+            const rawRows = data.slice(1);
+            
+            // คัดเฉพาะบรรทัดที่สมบูรณ์ป้องกัน Error
+            const validRows = rawRows.filter(row => row.length === headers.length);
+
+            // ซ่อน Loading และแสดงหน้าจอหลัก
+            $('#loadingWrapper').slideUp();
+            $('#contentWrapper').removeClass('d-none');
+
+            // สร้างตาราง
+            table = $('#schoolTable').DataTable({
+              data: validRows,
+              columns: headers.map(function(header) {
+                return { title: header };
+              }),
+              language: {
+                url: '//cdn.datatables.net/plug-ins/1.13.6/i18n/th.json'
+              },
+              pageLength: 15,
+              responsive: true,
+              lengthMenu: [[10, 15, 25, 50, -1], [10, 15, 25, 50, "ทั้งหมด"]]
+            });
+
+            // สร้างตัวเลือก Dropdown
+            let agencies = [...new Set(validRows.map(item => item[2]))].filter(x => x).sort();
+            let batches = [...new Set(validRows.map(item => item[4]))].filter(x => x).sort();
+
+            agencies.forEach(a => $('#agencyFilter').append(`<option value="${a}">${a}</option>`));
+            batches.forEach(b => $('#batchFilter').append(`<option value="${b}">รุ่นที่ ${b}</option>`));
+
+            // ฟังก์ชันวาดกราฟทั้ง 2 รูปแบบ
+            function renderCharts() {
+              let filteredData = table.rows({search: 'applied'}).data().toArray();
+              let agencyCounts = {};
+              let batchCounts = {};
+              
+              filteredData.forEach(row => {
+                let agency = row[2];
+                let batch = row[4];
+                if(agency) agencyCounts[agency] = (agencyCounts[agency] || 0) + 1;
+                if(batch) batchCounts[batch] = (batchCounts[batch] || 0) + 1;
+              });
+
+              // 1. วาดกราฟแท่ง (สังกัด)
+              let agencyLabels = Object.keys(agencyCounts);
+              let agencyData = Object.values(agencyCounts);
+
+              if (agencyChartInstance) agencyChartInstance.destroy();
+              let ctxAgency = document.getElementById('agencyChart').getContext('2d');
+              agencyChartInstance = new Chart(ctxAgency, {
+                type: 'bar',
+                data: {
+                  labels: agencyLabels,
+                  datasets: [{
+                    label: 'จำนวนโรงเรียน',
+                    data: agencyData,
+                    backgroundColor: ['#a8dadc', '#457b9d', '#1d3557', '#90e0ef', '#00b4d8', '#0077b6', '#03045e'],
+                    borderRadius: 6,
+                    barThickness: 'flex',
+                    maxBarThickness: 45
+                  }]
+                },
+                options: {
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  plugins: { legend: { display: false } },
+                  scales: {
+                    y: { beginAtZero: true, ticks: { stepSize: 1, font: {family: 'Kanit'} } },
+                    x: { ticks: { font: {family: 'Kanit', size: 11} } }
+                  }
+                }
+              });
+
+              // 2. วาดกราฟวงกลม (รุ่น)
+              let batchLabels = Object.keys(batchCounts).map(b => 'รุ่นที่ ' + b);
+              let batchData = Object.values(batchCounts);
+
+              if (batchChartInstance) batchChartInstance.destroy();
+              let ctxBatch = document.getElementById('batchChart').getContext('2d');
+              batchChartInstance = new Chart(ctxBatch, {
+                type: 'pie',
+                data: {
+                  labels: batchLabels,
+                  datasets: [{
+                    data: batchData,
+                    backgroundColor: ['#1d3557', '#457b9d', '#a8dadc', '#00b4d8', '#90e0ef', '#48cae4', '#023e8a'],
+                    borderWidth: 2,
+                    borderColor: '#ffffff'
+                  }]
+                },
+                options: {
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  plugins: {
+                    legend: { 
+                      position: 'right', 
+                      labels: { font: {family: 'Kanit'}, boxWidth: 15 } 
+                    },
+                    tooltip: {
+                      titleFont: {family: 'Kanit'},
+                      bodyFont: {family: 'Kanit', size: 14}
+                    }
+                  }
+                }
+              });
+            }
+
+            renderCharts();
+
+            // ตรวจจับการเปลี่ยนค่า Dropdown
+            $('#agencyFilter').off('change').on('change', function() {
+              let val = $.fn.dataTable.util.escapeRegex($(this).val());
+              table.column(2).search(val ? '^' + val + '$' : '', true, false).draw();
+            });
+
+            $('#batchFilter').off('change').on('change', function() {
+              let val = $.fn.dataTable.util.escapeRegex($(this).val());
+              table.column(4).search(val ? '^' + val + '$' : '', true, false).draw();
+            });
+
+            table.on('search.dt', function() { renderCharts(); });
+
+          },
+          error: function(err) {
+            $('#loadingWrapper').html('<div class="alert alert-danger">เกิดข้อผิดพลาดในการดึงไฟล์: อาจจะไม่มีไฟล์นี้อยู่บนเซิร์ฟเวอร์ครับ</div>');
+          }
         });
       });
     </script>
